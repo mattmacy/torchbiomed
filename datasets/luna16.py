@@ -3,14 +3,13 @@ import torch.utils.data as data
 
 import os
 import os.path
-import luna_utils as lu
 
 def make_dataset(dir, images, targets):
-    image_dict = lu.npz_load(dir + "/" + images)
-    label_dict = lu.npz_load(dir + "/" + targets)
+    image_dict = npz_load(dir + "/" + images)
+    label_dict = npz_load(dir + "/" + targets)
 
     for key in image_dict.keys():
-        image = lu.normalize(image_dict[key])
+        image = normalize(image_dict[key])
         image_dict[key] = image
     
     images = []
@@ -20,7 +19,7 @@ def make_dataset(dir, images, targets):
         images.append((key, image, label))
     return images
 
-class LIDC(data.Dataset):
+class LUNA16(data.Dataset):
     def __init__(self, root, images, targets, transform=None, target_transform=None,
                  co_transform=None):
         imgs = make_dataset(root, images, targets)
