@@ -24,10 +24,7 @@ class LUNA16(data.Dataset):
                  co_transform=None):
         imgs = make_dataset(root, images, targets)
         if len(imgs) == 0:
-            raise(RuntimeError("Found 0 images in subfolders of: " + root + "\n"
-                               "Supported image extensions are: " + ",".join(IMG_EXTENSIONS)))
-        if image_to_target is None:
-            raise(RuntimeError("no image to target mapping function provided"))
+            raise(RuntimeError("Found 0 targets: " + root + "/" + targets + "\n"))
 
         self.root = root
         self.imgs = imgs
@@ -36,7 +33,7 @@ class LUNA16(data.Dataset):
         self.co_transform = co_transform
 
     def __getitem__(self, index):
-        key, img, target = self.imgs[index]
+        _, img, target = self.imgs[index]
         if self.transform is not None:
             img = self.transform(img)
         if self.target_transform is not None:
