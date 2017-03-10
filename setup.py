@@ -5,7 +5,7 @@ import sys
 from setuptools import setup, find_packages
 
 
-readme = open('README.m').read()
+readme = open('README.md').read()
 
 VERSION = '0.0.1'
 
@@ -18,10 +18,10 @@ requirements = [
 
 setup(
     # Metadata
-    name='torchbiomed'
+    name='torchbiomed',
     version=VERSION,
-    author='Matthew Macy'
-    author_email='mat.macy@gmail.com'
+    author='Matthew Macy',
+    author_email='mat.macy@gmail.com',
     url='https://github.com/mattmacy/torchbiomed',
     description='biomedical image datasets, transforms, utilities, and models for torch deep learning',
     long_description=readme,
@@ -29,3 +29,6 @@ setup(
 
     # Package info
     packages=find_packages(exclude=('test',)),
+    zip_safe=True,
+    install_requires=requirements,
+)
