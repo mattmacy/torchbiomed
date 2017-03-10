@@ -42,6 +42,11 @@ def make_dataset(dir, images, targets, seed, train):
     if len(label_dict) == 0:
         label_dict = utils.npz_load(dir + "/" + targets)
 
+    for key in image_dict.keys():
+        image_dict[key] = image_dict[key].reshape((1, Z_MAX, Y_MAX, X_MAX))
+    for key in label_dict.keys():
+        label = label_dict[key]
+        label_dict[key] = label.astype(np.uint8).reshape((1, Z_MAX, Y_MAX, X_MAX))
     np.random.seed(seed)
     positives = set(label_dict.keys())
 
@@ -57,18 +62,20 @@ def make_dataset(dir, images, targets, seed, train):
 
     labels = []
     images = []
-    zero_tensor = torch.FloatTensor(Z_MAX, Y_MAX, X_MAX).zero_()
+    zero_tensor = torch.ByteTensor(1, Z_MAX, Y_MAX, X_MAX).zero_()
     for key in keys:
         if key not in label_dict.keys():
             labels.append(zero_tensor)
         else:
-            label = np.array(label_dict[key], dtype=np.float32)
-            #copy_tensor(label_tensor, label_dict[key])
-            labels.append(torch.Tensor(label))
+            label = label_dict[key]
+            labels.append(torch.from_numpy(label))
 
     for key in keys:
         image = image_dict[key]
-        images.append(torch.Tensor(utils.normalize(image)))
+        image = image.astype(np.float32)
+        image = torch.from_numpy(utils.normalize(image))
+        image_dict[key] = image
+        images.append(image)
 
     results = list(zip(images, labels))
     return results
