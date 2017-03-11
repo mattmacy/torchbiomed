@@ -13,6 +13,12 @@ label_dict = {}
 test_split = []
 train_split = []
 
+
+def image_normalize(img):
+    image = img.astype(np.float32)
+    image = torch.from_numpy(utils.normalize(image))
+    return image
+
 def train_test_split(full, positive):
     negative = full - positive
     test_neg_count = (len(negative) // 5) + 1
@@ -39,21 +45,20 @@ def make_dataset(dir, images, targets, seed, train):
     global image_dict, label_dict, test_split, train_split
     if len(image_dict) == 0:
         image_dict = utils.npz_load(dir + "/" + images)
+        for key in image_dict.keys():
+            image_dict[key] = image_dict[key].reshape((1, Z_MAX, Y_MAX, X_MAX))
+
     if len(label_dict) == 0:
         label_dict = utils.npz_load(dir + "/" + targets)
+        for key in label_dict.keys():
+            label = label_dict[key]
+            label_dict[key] = label.astype(np.uint8).reshape((1, Z_MAX, Y_MAX, X_MAX))
 
-    for key in image_dict.keys():
-        image_dict[key] = image_dict[key].reshape((1, Z_MAX, Y_MAX, X_MAX))
-    for key in label_dict.keys():
-        label = label_dict[key]
-        label_dict[key] = label.astype(np.uint8).reshape((1, Z_MAX, Y_MAX, X_MAX))
-    np.random.seed(seed)
-    positives = set(label_dict.keys())
-
-    assert len(positives) > 5
-
-    full = set(image_dict.keys())
     if len(test_split) == 0:
+        np.random.seed(seed)
+        positives = set(label_dict.keys())
+        assert len(positives) > 5
+        full = set(image_dict.keys())
         train_split, test_split = train_test_split(full, positives)
     if train:
         keys = train_split
@@ -62,20 +67,15 @@ def make_dataset(dir, images, targets, seed, train):
 
     labels = []
     images = []
-    zero_tensor = torch.ByteTensor(1, Z_MAX, Y_MAX, X_MAX).zero_()
+    zero_tensor = np.zeros((1, Z_MAX, Y_MAX, X_MAX), dtype=np.uint8)
     for key in keys:
         if key not in label_dict.keys():
             labels.append(zero_tensor)
         else:
-            label = label_dict[key]
-            labels.append(torch.from_numpy(label))
+            labels.append(label_dict[key])
 
     for key in keys:
-        image = image_dict[key]
-        image = image.astype(np.float32)
-        image = torch.from_numpy(utils.normalize(image))
-        image_dict[key] = image
-        images.append(image)
+        images.append(image_dict[key])
 
     results = list(zip(images, labels))
     return results
@@ -101,6 +101,9 @@ class LUNA16(data.Dataset):
 
     def __getitem__(self, index):
         img, target = self.imgs[index]
+        target = torch.from_numpy(target.astype(np.float32))
+        img = image_normalize(img)
+
         if self.transform is not None:
             img = self.transform(img)
         if self.target_transform is not None:
