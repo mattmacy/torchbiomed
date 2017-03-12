@@ -17,27 +17,26 @@ class DiceLoss(Function):
         self.save_for_backward(input, target)
         target = target.view(1, target.numel())
         # target is a binary valued tensor - dot(target, target) => sum(target)
-        target_neg = torch.cuda.FloatTensor(target.size()).fill_(1.)
-        target_neg = target_neg - target
-        target = torch.cat((target, target_neg), 0)
-        intersect = 2*torch.dot(input, target)
+        input = input[0]
+        intersect = torch.dot(input, target)
         union = torch.dot(input, input) + torch.sum(target)
-        out = torch.FloatTensor(1).zero_()
-        out = torch.add(out, intersect / union)
+        IoU = intersect/ union
+#        print('union: {:.3f}\t intersect: {:.6f}\t IoU: {:.7f}'.format(
+#            union, intersect, IoU))
+        out = torch.FloatTensor(1).fill_(0.)
+        out = torch.add(out, 2*IoU)
         return out
 
     def backward(self, grad_output):
         input, target = self.saved_tensors
-        target_neg = torch.cuda.FloatTensor(target.size()).fill_(1.)
-        target_neg = target_neg - target
-        target = torch.cat((target, target_neg), 0)
-
-        union = torch.dot(input, input) +  torch.sum(target)
-        intersect = torch.dot(input, target)
-        num = (torch.mul(target, union) - 2*torch.mul(input, intersect))
+        target = target.view(1, target.numel())
+        union = torch.dot(input[0], input[0]) +  torch.sum(target)
+        intersect = torch.dot(input[0], target)
+        num = (torch.mul(target, union) - 2*torch.mul(input[0], intersect))
         denom = (union*union)
-        grad_input = torch.mul(torch.div(num,denom), 2)
-        grad_input = torch.mul(grad_input, grad_output[0])
+
+        grad_input = torch.cat((torch.mul(torch.div(num,denom), 2*grad_output[0]),
+                                torch.mul(torch.div(num,denom), -2*grad_output[0])), 0)
         return grad_input , None
 
 def dice_loss(input, target):
