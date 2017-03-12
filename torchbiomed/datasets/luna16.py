@@ -27,16 +27,20 @@ def train_test_split(full, positive):
     positive_list = list(positive)
     np.random.shuffle(positive_list)
     np.random.shuffle(negative_list)
-    test_negative = set()
     test_positive = set()
-    for i in range(test_neg_count):
-        test_negative |= set([negative_list[i]])
     for i in range(test_pos_count):
         test_positive |= set([positive_list[i]])
-    train_negative = negative - test_negative
     train_positive = positive - test_positive
-    train = list(train_positive | train_negative)
-    test = list(test_positive | test_negative)
+    if test_neg_count > 1:
+        test_negative = set()
+        for i in range(test_neg_count):
+            test_negative |= set([negative_list[i]])
+        train_negative = negative - test_negative
+        train = list(train_positive | train_negative)
+        test = list(test_positive | test_negative)
+    else:
+        train = list(train_positive)
+        test = list(test_positive)
     np.random.shuffle(train)
     np.random.shuffle(test)
     return (train, test)
