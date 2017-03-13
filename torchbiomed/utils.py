@@ -1,17 +1,27 @@
+import SimpleITK as sitk
+
 import os.path
 import matplotlib.pyplot as plt
 from skimage import measure, morphology
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import numpy as np
+import scipy.ndimage
 
-Z_MAX = 192
-Y_MAX = 160
-X_MAX = 192
-vox_spacing = 2
-shape_max = (Z_MAX, Y_MAX, X_MAX)
+Z_MAX = -1
+Y_MAX = -1
+X_MAX = -1
+vox_spacing = -1
+shape_max = -1
 
 image_dict = {}
 mask_dict = {}
+
+def init_dims3D(z, y, x, spacing):
+    global Z_MAX, Y_MAX, X_MAX, vox_spacing, shape_max
+    vox_spacing = spacing
+    Z_MAX, Y_MAX, X_MAX = z, y, x
+    shape_max = (z, y, x)
+
 def img_store(image, name):
     fname = os.path.basename(name)[0:-4]    
     print("storing %s as %s"%(name, fname))
@@ -127,4 +137,29 @@ def copy_normalized(src, dtype=np.int16):
         for i in range(Z_MAX):
             copy_slice_centered(new_img[i], src[start+i], x_axis)            
     return new_img
+
+def truncate(image):
+    image[image < MIN_BOUND] = MIN_BOUND
+    image[image > MAX_BOUND] = MAX_BOUND
+    return image
+
+def resample_volume(img, spacing_old, spacing_new):
+    (z_axis, y_axis, x_axis) = np.shape(img)
+    resize_factor = np.array(spacing_old) / spacing_new 
+    new_shape = np.round(np.shape(img) * resize_factor)
+    real_resize_factor = new_shape / np.shape(img)
+    img_rescaled = scipy.ndimage.interpolation.zoom(img, real_resize_factor, mode='nearest').astype(np.int16)
+    img_array_normalized = copy_normalized(img_rescaled)
+    img_tmp = img_array_normalized.copy()
+    # determine what the mean will be on the anticipated value range
+    img_tmp = truncate(img_tmp)
+    mu = np.mean(img_tmp)
+    var = np.var(img_tmp)
+    return (img_array_normalized, mu, var)
+
+def save_updated_image(img_arr, itk_img_orig, path, spacing):
+    itk_scaled_img = sitk.GetImageFromArray(img_arr, isVector=False)
+    itk_scaled_img.SetSpacing(spacing)
+    itk_scaled_img.SetOrigin(itk_img_orig.GetOrigin())
+    sitk.WriteImage(itk_scaled_img, path)
 
