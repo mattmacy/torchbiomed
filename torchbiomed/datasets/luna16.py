@@ -8,16 +8,13 @@ import os
 import os.path
 from torchbiomed.utils import Z_MAX, Y_MAX, X_MAX
 
+MIN_BOUND = -1000
+MAX_BOUND = 400
+
 image_dict = {}
 label_dict = {}
 test_split = []
 train_split = []
-
-
-def image_normalize(img):
-    image = img.astype(np.float32)
-    image = torch.from_numpy(utils.normalize(image))
-    return image
 
 def train_test_split(full, positive):
     negative = full - positive
@@ -45,44 +42,61 @@ def train_test_split(full, positive):
     np.random.shuffle(test)
     return (train, test)
 
+def load_image(root, series):
+    if series in image_dict.keys():
+        return image_dict[series]
+    img_file = root + "/" + series + ".mhd"
+    itk_img = sitk.ReadImage(img_file)
+    img = sitk.GetArrayFromImage(itk_img)
+    z, y, x = img.shape()
+    img = img.reshape((1, z, y, x))
+    image_dict[series] = utils.truncate(img, MIN_BOUND, MAX_BOUND)
+    return img
+
+def load_label(root, series):
+    if series in label_dict.keys():
+        return label_dict[series]
+    img_file = root + "/" + series + ".mhd"
+    itk_img = sitk.ReadImage(img_file)
+    img = sitk.GetArrayFromImage(itk_img)
+    z, y, x = img.shape()
+    img = img.reshape((1, z, y, x))
+    label_dict[series] = img
+    return img
+
 def make_dataset(dir, images, targets, seed, train):
     global image_dict, label_dict, test_split, train_split
-    if len(image_dict) == 0:
-        image_dict = utils.npz_load(dir + "/" + images)
-        for key in image_dict.keys():
-            image_dict[key] = image_dict[key].reshape((1, Z_MAX, Y_MAX, X_MAX))
+    zero_tensor = None
 
-    if len(label_dict) == 0:
-        label_dict = utils.npz_load(dir + "/" + targets)
-        for key in label_dict.keys():
-            label = label_dict[key]
-            label_dict[key] = label.astype(np.uint8).reshape((1, Z_MAX, Y_MAX, X_MAX))
+    label_path = dir + "/" + targets
+    label_files = glob(label_path + "/*.mhd")
+    label_list = {}
+    for name in label_files:
+        label_list.append(os.path.basename(name)[:-4])
 
     if len(test_split) == 0:
+        sample_label = load_label(label_path, label_list[0])
+        shape = np.shape(sample_label)
+        zero_tensor = np.zeros(shape, dtype=np.uint8)
+        image_list = []
+        image_path = dir + "/" + images
+        file_list=glob(image_path + "/*.mhd")
+        for img_file in file_list:
+            series = os.path.basename(img_file)[:-4]
+            image_list.append(series)
+            if series not in label_list:
+                label_dict[series] = zero_tensor
         np.random.seed(seed)
-        positives = set(label_dict.keys())
+        positives = set(label_list)
         assert len(positives) > 5
-        full = set(image_dict.keys())
+        full = image_list
         train_split, test_split = train_test_split(full, positives)
     if train:
         keys = train_split
     else:
         keys = test_split
 
-    labels = []
-    images = []
-    zero_tensor = np.zeros((1, Z_MAX, Y_MAX, X_MAX), dtype=np.uint8)
-    for key in keys:
-        if key not in label_dict.keys():
-            labels.append(zero_tensor)
-        else:
-            labels.append(label_dict[key])
-
-    for key in keys:
-        images.append(image_dict[key])
-
-    results = list(zip(images, labels))
-    return results
+    return keys
 
 
 class LUNA16(data.Dataset):
@@ -99,14 +113,18 @@ class LUNA16(data.Dataset):
 
         self.root = root
         self.imgs = imgs
+        self.targets = self.root + "/" + targets
+        self.images = self.root + "/" + images
         self.transform = transform
         self.target_transform = target_transform
         self.co_transform = co_transform
 
     def __getitem__(self, index):
-        img, target = self.imgs[index]
+        series = self.imgs[index]
+        target = load_label(self.targets, series)
         target = torch.from_numpy(target.astype(np.float32))
-        img = image_normalize(img)
+        image = load_image(self.images, series)
+        img = image.astype(np.float32)
 
         if self.transform is not None:
             img = self.transform(img)
