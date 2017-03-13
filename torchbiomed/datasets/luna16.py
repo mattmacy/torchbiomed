@@ -3,10 +3,10 @@ import numpy as np
 import torch
 import torch.utils.data as data
 import torchbiomed.utils as utils
-
+from glob import glob
 import os
 import os.path
-from torchbiomed.utils import Z_MAX, Y_MAX, X_MAX
+import SimpleITK as sitk
 
 MIN_BOUND = -1000
 MAX_BOUND = 400
@@ -48,7 +48,7 @@ def load_image(root, series):
     img_file = root + "/" + series + ".mhd"
     itk_img = sitk.ReadImage(img_file)
     img = sitk.GetArrayFromImage(itk_img)
-    z, y, x = img.shape()
+    z, y, x = np.shape(img)
     img = img.reshape((1, z, y, x))
     image_dict[series] = utils.truncate(img, MIN_BOUND, MAX_BOUND)
     return img
@@ -59,18 +59,19 @@ def load_label(root, series):
     img_file = root + "/" + series + ".mhd"
     itk_img = sitk.ReadImage(img_file)
     img = sitk.GetArrayFromImage(itk_img)
-    z, y, x = img.shape()
+    img[img != 0] = 1
+    z, y, x = np.shape(img)
     img = img.reshape((1, z, y, x))
     label_dict[series] = img
     return img
 
-def make_dataset(dir, images, targets, seed, train):
+def make_dataset(dir, images, targets, seed, train, allow_empty):
     global image_dict, label_dict, test_split, train_split
     zero_tensor = None
 
     label_path = dir + "/" + targets
     label_files = glob(label_path + "/*.mhd")
-    label_list = {}
+    label_list = []
     for name in label_files:
         label_list.append(os.path.basename(name)[:-4])
 
@@ -83,13 +84,14 @@ def make_dataset(dir, images, targets, seed, train):
         file_list=glob(image_path + "/*.mhd")
         for img_file in file_list:
             series = os.path.basename(img_file)[:-4]
+            if not allow_empty and series not in label_list:
+                continue
             image_list.append(series)
             if series not in label_list:
                 label_dict[series] = zero_tensor
         np.random.seed(seed)
-        positives = set(label_list)
-        assert len(positives) > 5
-        full = image_list
+        full = set(image_list)
+        positives = set(label_list) & full
         train_split, test_split = train_test_split(full, positives)
     if train:
         keys = train_split
@@ -102,11 +104,11 @@ def make_dataset(dir, images, targets, seed, train):
 class LUNA16(data.Dataset):
     def __init__(self, root='.', images=None, targets=None, transform=None,
                  target_transform=None, co_transform=None,
-                 train=True, seed=1):
+                 train=True, seed=1, allow_empty=True):
         if images is None or targets is None:
             raise(RuntimeError("both images and targets must be set"))
 
-        imgs = make_dataset(root, images, targets, seed, train)
+        imgs = make_dataset(root, images, targets, seed, train, allow_empty)
         if len(imgs) == 0:
             raise(RuntimeError("Found 0 targets: " + root +
                                "/" + targets + "\n"))
