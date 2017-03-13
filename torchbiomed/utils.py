@@ -7,11 +7,11 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import numpy as np
 import scipy.ndimage
 
-Z_MAX = -1
-Y_MAX = -1
-X_MAX = -1
-vox_spacing = -1
-shape_max = -1
+Z_MAX = None
+Y_MAX = None
+X_MAX = None
+vox_spacing = None
+shape_max = None
 
 image_dict = {}
 mask_dict = {}
@@ -31,7 +31,6 @@ def mask_store(image, name):
     fname = os.path.basename(name)[0:-4]    
     print("storing %s as %s"%(name, fname))
     mask_dict[fname] = image.astype(np.int8)
-    
 
 def debug_img(img):
     plt.hist(img.flatten(), bins=80, color='c')
@@ -39,15 +38,6 @@ def debug_img(img):
     plt.ylabel("Frequency")
     plt.show()
 
-MIN_BOUND = -1000
-MAX_BOUND = 400
-UPPER_BOUND = 1400
-
-# re-scale image on load for training
-def normalize(image):
-    image = image.astype(np.float32) / UPPER_BOUND
-    return image
-    
 def plot_3d(image, threshold=-300):
     # Position the scan upright, 
     # so the head of the patient would be at the top facing the camera
@@ -84,10 +74,10 @@ def npz_save(name, obj):
 
 def mask_save(name):
     npz_save(name, mask_dict)
-    
+
 def img_save(name):
     npz_save(name, image_dict)
-    
+
 def npz_load(filename):
     npzfile = np.load(filename+".npz")
     keys = npzfile["keys"]
@@ -99,7 +89,7 @@ def npz_load_uncompressed(filename):
     keys = npzfile["keys"]
     values = npzfile["values"]
     return dict(zip(keys, values))
-    
+
 def copy_slice_centered(dst, src, dim):
     if dim <= Y_MAX:
         x_start = int((X_MAX - dim) / 2)
@@ -119,7 +109,7 @@ def copy_slice_centered(dst, src, dim):
         for y in range(Y_MAX):
             for x in range(X_MAX):
                 dst[y][x] = src[y_start+y][x_start+x]
-        
+
 def copy_normalized(src, dtype=np.int16):
     src_shape = np.shape(src)
     if src_shape == shape_max:
@@ -127,7 +117,7 @@ def copy_normalized(src, dtype=np.int16):
     
     (z_axis, y_axis, x_axis) = src_shape
     assert x_axis == y_axis
-    new_img = np.zeros(shape_max, dtype=dtype)
+    new_img = np.full(shape_max, np.min(src), dtype=dtype)
     if z_axis < Z_MAX:
         start = int((Z_MAX - z_axis) / 2)
         for i in range(z_axis):
@@ -138,12 +128,12 @@ def copy_normalized(src, dtype=np.int16):
             copy_slice_centered(new_img[i], src[start+i], x_axis)            
     return new_img
 
-def truncate(image):
-    image[image < MIN_BOUND] = MIN_BOUND
-    image[image > MAX_BOUND] = MAX_BOUND
+def truncate(image, min_bound, max_bound):
+    image[image < min_bound] = min_bound
+    image[image > max_bound] = max_bound
     return image
 
-def resample_volume(img, spacing_old, spacing_new):
+def resample_volume(img, spacing_old, spacing_new, bounds):
     (z_axis, y_axis, x_axis) = np.shape(img)
     resize_factor = np.array(spacing_old) / spacing_new 
     new_shape = np.round(np.shape(img) * resize_factor)
@@ -152,7 +142,8 @@ def resample_volume(img, spacing_old, spacing_new):
     img_array_normalized = copy_normalized(img_rescaled)
     img_tmp = img_array_normalized.copy()
     # determine what the mean will be on the anticipated value range
-    img_tmp = truncate(img_tmp)
+    min_bound, max_bound = bounds
+    img_tmp = truncate(img_tmp, min_bound, max_bound)
     mu = np.mean(img_tmp)
     var = np.var(img_tmp)
     return (img_array_normalized, mu, var)
