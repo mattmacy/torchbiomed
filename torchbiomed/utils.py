@@ -133,7 +133,7 @@ def truncate(image, min_bound, max_bound):
     image[image > max_bound] = max_bound
     return image
 
-def resample_volume(img, spacing_old, spacing_new, bounds):
+def resample_volume(img, spacing_old, spacing_new, bounds=None):
     (z_axis, y_axis, x_axis) = np.shape(img)
     resize_factor = np.array(spacing_old) / spacing_new 
     new_shape = np.round(np.shape(img) * resize_factor)
@@ -142,10 +142,12 @@ def resample_volume(img, spacing_old, spacing_new, bounds):
     img_array_normalized = copy_normalized(img_rescaled)
     img_tmp = img_array_normalized.copy()
     # determine what the mean will be on the anticipated value range
-    min_bound, max_bound = bounds
-    img_tmp = truncate(img_tmp, min_bound, max_bound)
-    mu = np.mean(img_tmp)
-    var = np.var(img_tmp)
+    mu, var = 0., 0.
+    if bounds is not None:
+        min_bound, max_bound = bounds
+        img_tmp = truncate(img_tmp, min_bound, max_bound)
+        mu = np.mean(img_tmp)
+        var = np.var(img_tmp)
     return (img_array_normalized, mu, var)
 
 def save_updated_image(img_arr, itk_img_orig, path, spacing):
