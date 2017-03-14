@@ -16,7 +16,6 @@ class DiceLoss(Function):
 
     def forward(self, input, target):
         self.save_for_backward(input, target)
-        target = target.view(target.numel())
         eps = 0.0000001
         _, result_ = input.max(1)
         result_ = torch.squeeze(result_)
@@ -41,7 +40,6 @@ class DiceLoss(Function):
     def backward(self, grad_output):
         input, target = self.saved_tensors
         intersect, union = self.intersect, self.union
-        target = target.view(1, target.numel())
         gt = torch.div(target, union)
         IoU2 = intersect/(union*union)
         pred = torch.mul(input[:, 1], IoU2)
