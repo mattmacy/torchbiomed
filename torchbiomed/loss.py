@@ -16,7 +16,7 @@ class DiceLoss(Function):
 
     def forward(self, input, target):
         self.save_for_backward(input, target)
-        target = target.view(1, target.numel())
+        target = target.view(target.numel())
         eps = 0.0000001
         _, result_ = input.max(1)
         result_ = torch.squeeze(result_)
@@ -32,8 +32,8 @@ class DiceLoss(Function):
         # the target volume can be empty - so we still want to
         # end up with a score of 1 if the result is 0/0
         IoU = intersect / union
-#        print('union: {:.3f}\t intersect: {:.6f}\t target_sum: {:.0f} IoU: result_sum: {:.0f} IoU {:.7f}'.format(
-#            union, intersect, target_sum, result_sum, 2*IoU))
+        print('union: {:.3f}\t intersect: {:.6f}\t target_sum: {:.0f} IoU: result_sum: {:.0f} IoU {:.7f}'.format(
+            union, intersect, target_sum, result_sum, 2*IoU))
         out = torch.FloatTensor(1).fill_(2*IoU)
         self.intersect, self.union = intersect, union
         return out
@@ -46,8 +46,8 @@ class DiceLoss(Function):
         IoU2 = intersect/(union*union)
         pred = torch.mul(input[:, 1], IoU2)
         dDice = torch.add(torch.mul(gt, 2), torch.mul(pred, -4))
-        grad_input = torch.cat((torch.mul(dDice, grad_output[0]),
-                                torch.mul(dDice, -grad_output[0])), 0)
+        grad_input = torch.cat((torch.mul(dDice, -grad_output[0]),
+                                torch.mul(dDice, grad_output[0])), 0)
         return grad_input , None
 
 def dice_loss(input, target):
