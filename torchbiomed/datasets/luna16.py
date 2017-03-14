@@ -100,6 +100,53 @@ def make_dataset(dir, images, targets, seed, train, allow_empty):
 
     return keys
 
+def normalize_lung_CT(**kwargs):
+    mean_values = []
+    var_values = []
+    MIN_BOUND = -1000
+    MAX_BOUND = 400
+    Z_MAX, Y_MAX, X_MAX = kwargs['Z_MAX'], kwargs['Y_MAX'], kwargs['X_MAX']
+    vox_spacing = kwargs['vox_spacing']
+    utils.init_dims3D(Z_MAX, Y_MAX, X_MAX, vox_spacing)
+    luna_subset_path = kwargs['src']
+    luna_save_path = kwargs['dst']
+    file_list=glob(luna_subset_path+"*.mhd")
+    img_spacing = (vox_spacing, vox_spacing, vox_spacing)
+
+    for img_file in file_list:
+        itk_img = sitk.ReadImage(img_file)
+        (x_space, y_space, z_space) = itk_img.GetSpacing()
+        spacing_old = (z_space, y_space, x_space)
+        img_array = sitk.GetArrayFromImage(itk_img) # indexes are z,y,x (notice the ordering)
+        img, mu, var = utils.resample_volume(img_array, spacing_old, img_spacing, bounds=(MIN_BOUND, MAX_BOUND))
+        utils.save_updated_image(img, itk_img, luna_save_path+os.path.basename(img_file), img_spacing)
+        mean_values.append(mu)
+        var_values.append(var)
+    dataset_mean = np.mean(mean_values)
+    dataset_stddev = np.sqrt(np.mean(var_values))
+    return (dataset_mean, dataset_stddev)
+
+
+def normalize_lung_mask(**kwargs):
+    mean_values = []
+    var_values = []
+    MIN_BOUND = -1000
+    MAX_BOUND = 400
+    Z_MAX, Y_MAX, X_MAX = kwargs['Z_MAX'], kwargs['Y_MAX'], kwargs['X_MAX']
+    vox_spacing = kwargs['vox_spacing']
+    utils.init_dims3D(Z_MAX, Y_MAX, X_MAX, vox_spacing)
+    luna_seg_lungs_path = kwargs['src']
+    luna_seg_lungs_save_path = kwargs['dst']
+    file_list=glob(luna_seg_lungs_path+"*.mhd")
+    img_spacing = (vox_spacing, vox_spacing, vox_spacing)
+    for img_file in file_list:
+        itk_img = sitk.ReadImage(img_file)
+        (x_space, y_space, z_space) = itk_img.GetSpacing()
+        spacing_old = (z_space, y_space, x_space)
+        img_array = sitk.GetArrayFromImage(itk_img) # indexes are z,y,x (notice the ordering)
+        img, _, _ = utils.resample_volume(img_array, spacing_old, img_spacing)
+        utils.save_updated_image(img, itk_img, luna_seg_lungs_save_path+os.path.basename(img_file), img_spacing)
+
 
 class LUNA16(data.Dataset):
     def __init__(self, root='.', images=None, targets=None, transform=None,
@@ -124,7 +171,7 @@ class LUNA16(data.Dataset):
     def __getitem__(self, index):
         series = self.imgs[index]
         target = load_label(self.targets, series)
-        target = torch.from_numpy(target.astype(np.float32))
+        target = torch.from_numpy(target.astype(np.int64))
         image = load_image(self.images, series)
         img = image.astype(np.float32)
 
