@@ -58,14 +58,14 @@ def load_label(root, series):
         return label_dict[series]
     img_file = root + "/" + series + ".mhd"
     itk_img = sitk.ReadImage(img_file)
-    img = sitk.GetArrayFromImage(itk_img)
+    img = sitk.GetArrayFromImage(itk_img).astype(np.uint8)
     img[img != 0] = 1
     z, y, x = np.shape(img)
     img = img.reshape((1, z, y, x))
     label_dict[series] = img
     return img
 
-def make_dataset(dir, images, targets, seed, train, allow_empty):
+def make_dataset(dir, images, targets, seed, train, allow_empty, class_balance):
     global image_dict, label_dict, test_split, train_split
     zero_tensor = None
 
@@ -74,6 +74,13 @@ def make_dataset(dir, images, targets, seed, train, allow_empty):
     label_list = []
     for name in label_files:
         label_list.append(os.path.basename(name)[:-4])
+
+    target_weight = 0
+    if class_balance:
+        for series in label_list:
+            label = load_label(label_path, series)
+            target_weight += np.mean(label)
+        target_weight /= len(label_list)
 
     if len(test_split) == 0:
         sample_label = load_label(label_path, label_list[0])
@@ -98,7 +105,7 @@ def make_dataset(dir, images, targets, seed, train, allow_empty):
     else:
         keys = test_split
 
-    return keys
+    return (keys, target_weight)
 
 def normalize_lung_CT(**kwargs):
     mean_values = []
@@ -151,15 +158,16 @@ def normalize_lung_mask(**kwargs):
 class LUNA16(data.Dataset):
     def __init__(self, root='.', images=None, targets=None, transform=None,
                  target_transform=None, co_transform=None,
-                 train=True, seed=1, allow_empty=True):
+                 train=True, seed=1, allow_empty=True, class_balance=False):
         if images is None or targets is None:
             raise(RuntimeError("both images and targets must be set"))
 
-        imgs = make_dataset(root, images, targets, seed, train, allow_empty)
+        imgs, target_weight = make_dataset(root, images, targets, seed, train, allow_empty, class_balance)
         if len(imgs) == 0:
             raise(RuntimeError("Found 0 targets: " + root +
                                "/" + targets + "\n"))
 
+        self.fg_weight = target_weight
         self.root = root
         self.imgs = imgs
         self.targets = self.root + "/" + targets
@@ -167,6 +175,9 @@ class LUNA16(data.Dataset):
         self.transform = transform
         self.target_transform = target_transform
         self.co_transform = co_transform
+
+    def target_weight(self):
+        return self.fg_weight
 
     def __getitem__(self, index):
         series = self.imgs[index]
