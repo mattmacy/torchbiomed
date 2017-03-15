@@ -60,12 +60,10 @@ def load_label(root, series):
     itk_img = sitk.ReadImage(img_file)
     img = sitk.GetArrayFromImage(itk_img).astype(np.uint8)
     img[img != 0] = 1
-    z, y, x = np.shape(img)
-    img = img.reshape((1, z, y, x))
     label_dict[series] = img
     return img
 
-def make_dataset(dir, images, targets, seed, train, allow_empty, class_balance):
+def make_dataset(dir, images, targets, seed, train, allow_empty, class_balance, partition):
     global image_dict, label_dict, test_split, train_split
     zero_tensor = None
 
@@ -82,9 +80,9 @@ def make_dataset(dir, images, targets, seed, train, allow_empty, class_balance):
             target_weight += np.mean(label)
         target_weight /= len(label_list)
 
+    sample_label = load_label(label_path, label_list[0])
+    shape = np.shape(sample_label)
     if len(test_split) == 0:
-        sample_label = load_label(label_path, label_list[0])
-        shape = np.shape(sample_label)
         zero_tensor = np.zeros(shape, dtype=np.uint8)
         image_list = []
         image_path = dir + "/" + images
@@ -104,8 +102,33 @@ def make_dataset(dir, images, targets, seed, train, allow_empty, class_balance):
         keys = train_split
     else:
         keys = test_split
+    part_list = []
+    z, y, x = shape
+    if partition is not None:
+        z_p, y_p, x_p = partition
+        z, y, x = shape
+        z_incr, y_incr, x_incr = z // z_p, y // y_p, x // x_p
+        assert z % z_p == 0
+        assert y % y_p == 0
+        assert x % x_p == 0
+        for zi in range(z_p):
+            zstart = zi*z_incr
+            zend = zstart + z_incr
+            for yi in range(y_p):
+                ystart = yi*y_incr
+                yend = ystart + y_incr
+                for xi in range(x_p):
+                    xstart = xi*x_incr
+                    xend = xstart + x_incr
+                    part_list.append(((zstart, zend), (ystart, yend), (xstart, xend)))
+    else:
+        part_list = ((0, z), (0, y), (0, x))
+    result = []
+    for key in keys:
+        for part in part_list:
+            result.append((key, part))
 
-    return (keys, target_weight)
+    return (result, target_weight)
 
 def normalize_lung_CT(**kwargs):
     mean_values = []
@@ -158,11 +181,11 @@ def normalize_lung_mask(**kwargs):
 class LUNA16(data.Dataset):
     def __init__(self, root='.', images=None, targets=None, transform=None,
                  target_transform=None, co_transform=None,
-                 train=True, seed=1, allow_empty=True, class_balance=False):
+                 train=True, seed=1, allow_empty=True, class_balance=False, split=None):
         if images is None or targets is None:
             raise(RuntimeError("both images and targets must be set"))
 
-        imgs, target_weight = make_dataset(root, images, targets, seed, train, allow_empty, class_balance)
+        imgs, target_weight = make_dataset(root, images, targets, seed, train, allow_empty, class_balance, split)
         if len(imgs) == 0:
             raise(RuntimeError("Found 0 targets: " + root +
                                "/" + targets + "\n"))
@@ -180,10 +203,14 @@ class LUNA16(data.Dataset):
         return self.fg_weight
 
     def __getitem__(self, index):
-        series = self.imgs[index]
+        series, bounds = self.imgs[index]
+        (zs, ze), (ys, ye), (xs, xe) = bounds
         target = load_label(self.targets, series)
+        target = target[zs:ze, ys:ye, xs:xe]
         target = torch.from_numpy(target.astype(np.int64))
         image = load_image(self.images, series)
+        image = image[0, zs:ze, ys:ye, xs:xe]
+        image = image.reshape((1, ze-zs, ye-ys, xe-xs))
         img = image.astype(np.float32)
 
         if self.transform is not None:
