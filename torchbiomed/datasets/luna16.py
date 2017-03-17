@@ -51,7 +51,7 @@ def load_image(root, series):
     z, y, x = np.shape(img)
     img = img.reshape((1, z, y, x))
     img = utils.truncate(img, MIN_BOUND, MAX_BOUND)
-    image_dict[series] = utils.rescale(image, MIN_BOUND, MAX_BOUND)
+    image_dict[series] = utils.rescale(img, MIN_BOUND, MAX_BOUND)
     return img
 
 def load_label(root, series):
