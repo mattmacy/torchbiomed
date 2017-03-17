@@ -13,24 +13,11 @@ X_MAX = None
 vox_spacing = None
 shape_max = None
 
-image_dict = {}
-mask_dict = {}
-
 def init_dims3D(z, y, x, spacing):
     global Z_MAX, Y_MAX, X_MAX, vox_spacing, shape_max
     vox_spacing = spacing
     Z_MAX, Y_MAX, X_MAX = z, y, x
     shape_max = (z, y, x)
-
-def img_store(image, name):
-    fname = os.path.basename(name)[0:-4]    
-    print("storing %s as %s"%(name, fname))
-    image_dict[fname] = image.astype(np.int16)
-
-def mask_store(image, name):
-    fname = os.path.basename(name)[0:-4]    
-    print("storing %s as %s"%(name, fname))
-    mask_dict[fname] = image.astype(np.int8)
 
 def debug_img(img):
     plt.hist(img.flatten(), bins=80, color='c')
@@ -71,12 +58,6 @@ def npz_save(name, obj):
     keys = list(obj.keys())
     values = list(obj.values())
     np.savez_compressed(name+".npz", keys=keys, values=values) 
-
-def mask_save(name):
-    npz_save(name, mask_dict)
-
-def img_save(name):
-    npz_save(name, image_dict)
 
 def npz_load(filename):
     npzfile = np.load(filename+".npz")
@@ -135,7 +116,7 @@ def truncate(image, min_bound, max_bound):
 
 def rescale(image, min_bound, max_bound):
     image -= min_bound
-    image = image.astype(np.float64)
+    image = image.astype(np.float32)
     image /= float(max_bound - min_bound)
     return image
 
