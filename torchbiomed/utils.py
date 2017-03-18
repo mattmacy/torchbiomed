@@ -49,15 +49,15 @@ def plot_3d(image, threshold=-300):
 
     plt.show()
 
-def npz_save_uncompressed(name, obj):
-    keys = list(obj.keys())
-    values = list(obj.values())
-    np.savez(name+"_uncompressed.npz", keys=keys, values=values) 
-
 def npz_save(name, obj):
     keys = list(obj.keys())
     values = list(obj.values())
-    np.savez_compressed(name+".npz", keys=keys, values=values) 
+    np.savez(name+".npz", keys=keys, values=values)
+
+def npz_save_compressed(name, obj):
+    keys = list(obj.keys())
+    values = list(obj.values())
+    np.savez_compressed(name+"_compressed.npz", keys=keys, values=values)
 
 def npz_load(filename):
     npzfile = np.load(filename+".npz")
@@ -65,8 +65,8 @@ def npz_load(filename):
     values = npzfile["values"]
     return dict(zip(keys, values))
 
-def npz_load_uncompressed(filename):
-    npzfile = np.load(filename+"_uncompressed.npz")
+def npz_load_compressed(filename):
+    npzfile = np.load(filename+"_compressed.npz")
     keys = npzfile["keys"]
     values = npzfile["values"]
     return dict(zip(keys, values))
