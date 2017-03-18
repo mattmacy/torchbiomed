@@ -159,16 +159,12 @@ def normalize_lung_CT(**kwargs):
 
 
 def normalize_lung_mask(**kwargs):
-    mean_values = []
-    var_values = []
-    MIN_BOUND = -1000
-    MAX_BOUND = 400
     Z_MAX, Y_MAX, X_MAX = kwargs['Z_MAX'], kwargs['Y_MAX'], kwargs['X_MAX']
     vox_spacing = kwargs['vox_spacing']
     utils.init_dims3D(Z_MAX, Y_MAX, X_MAX, vox_spacing)
     luna_seg_lungs_path = kwargs['src']
     luna_seg_lungs_save_path = kwargs['dst']
-    file_list=glob(luna_seg_lungs_path+"*.mhd")
+    file_list=glob(luna_seg_lungs_path + "/" +"*.mhd")
     img_spacing = (vox_spacing, vox_spacing, vox_spacing)
     for img_file in file_list:
         itk_img = sitk.ReadImage(img_file)
@@ -176,7 +172,10 @@ def normalize_lung_mask(**kwargs):
         spacing_old = (z_space, y_space, x_space)
         img_array = sitk.GetArrayFromImage(itk_img) # indexes are z,y,x (notice the ordering)
         img, _, _ = utils.resample_volume(img_array, spacing_old, img_spacing)
-        utils.save_updated_image(img, itk_img, luna_seg_lungs_save_path+os.path.basename(img_file), img_spacing)
+        img[img < 1] = 0
+        utils.save_updated_image(img, itk_img,
+                                 os.path.join(luna_seg_lungs_save_path, os.path.basename(img_file)),
+                                 img_spacing)
 
 
 def normalize_nodule_mask(**kwargs):
