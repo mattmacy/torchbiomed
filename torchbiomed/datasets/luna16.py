@@ -178,17 +178,41 @@ def normalize_lung_mask(**kwargs):
                                  img_spacing)
 
 
+def build_nodule_offset_tables(file_list, save_path):
+    offset_dict = {}
+    origin_dict = {}
+    for img_file in file_list:
+        series = os.path.basename(img_file)[:-4]
+        itk_img = sitk.ReadImage(img_file)
+        (x_space, y_space, z_space) = itk_img.GetSpacing()
+        img_spacing = (z_space, y_space, x_space)
+        x_size, y_size, z_size = itk_img.GetSize()
+        img_size = (z_size, y_size, x_size)
+        resize_factor = np.array(img_spacing) / [vox_spacing, vox_spacing, vox_spacing]
+        (new_z, new_y, new_x) = np.round(img_size * resize_factor)
+        z_off = int((new_z - Z_MAX)/2)
+        y_off = int((new_y - Y_MAX)/2)
+        x_off = int((new_x - X_MAX)/2)
+        offset_dict[series] = np.array((z_off, y_off, x_off))
+        x_orig, y_orig, z_orig = itk_img.GetOrigin()
+        origin_dict[series] = np.array((z_orig, y_orig, x_orig))
+    utils.npz_save(os.path.join(save_path, "origin_table"), origin_dict)
+    utils.npz_save(os.path.join(save_path, "offset_table"), offset_dict)
+
+
 def normalize_nodule_mask(**kwargs):
     luna_path = kwargs['orig']
-    file_list = glob(luna_path+"*.mhd")
     pixel_count = 0
     mask_count = 0
     annotations = kwargs['annotations']
     Z_MAX, Y_MAX, X_MAX = kwargs['Z_MAX'], kwargs['Y_MAX'], kwargs['X_MAX']
     shape_max = (Z_MAX, Y_MAX, X_MAX)
     vox_spacing = kwargs['vox_spacing']
+    tables_path = kwargs['tables']
     utils.init_dims3D(Z_MAX, Y_MAX, X_MAX, vox_spacing)
     x_list, y_list, z_list = [], [], []
+    luna_normal_path = kwargs['src']
+    luna_mask_path = kwargs['dst']
 
     def get_boundaries(origin, offsets, params):
         diam, center = params
@@ -201,10 +225,6 @@ def normalize_nodule_mask(**kwargs):
         v_center -= offsets
         v_lower -= offsets
         v_upper -= offsets
-        #print((v_lower, v_center, v_upper))
-        #vox_check(v_lower)
-        #vox_check(v_center)
-        #vox_check(v_upper)
         x_list.append(v_upper[2])
         y_list.append(v_upper[1])
         z_list.append(v_upper[0])
@@ -227,51 +247,26 @@ def normalize_nodule_mask(**kwargs):
         z_min, y_min, x_min = v_lower
         z_max, y_max, x_max = v_upper
         pixel_count = 0
+        min_ct = np.min(CT)
         radius = np.rint((z_max - z_min + vox_spacing)/2)
-        ct_thresh = MIN_BOUND + 1
+        ct_thresh = min_ct + 1
+        bit_count = 0
+        #print(v_center)
         for z in range(z_min, z_max):
             for y in range(y_min, y_max):
                 for x in range(x_min, x_max):
-                    vox = np.array((z, y, x))
-                    off = vox - v_center
-                    if l2_norm(off) > radius:
+                    if l2_norm(np.array((z, y, x)), v_center) > radius:
                         break
                     if CT[z][y][x] > ct_thresh:
-                        mask[z][y][x] = 5
+                        mask[z][y][x] = 4
                         pixel_count += 1
                         bit_count += 1
         assert bit_count != 0
 
-    origin_dict = {}
-    offset_dict = {}
-    luna_normal_path = kwargs['src']
-    luna_mask_path = kwargs['dst']
-
-    count = 0
-    for img_file in file_list:
-        series = os.path.basename(img_file)[:-4]
-        itk_img = sitk.ReadImage(img_file)
-        (x_space, y_space, z_space) = itk_img.GetSpacing()
-        img_spacing = (z_space, y_space, x_space)
-        x_size, y_size, z_size = itk_img.GetSize()
-        img_size = (z_size, y_size, x_size)
-        resize_factor = np.array(img_spacing) / [vox_spacing, vox_spacing, vox_spacing]
-        (new_z, new_y, new_x) = np.round(img_size * resize_factor)
-        z_off = int((new_z - Z_MAX)/2)
-        y_off = int((new_y - Y_MAX)/2)
-        x_off = int((new_x - X_MAX)/2)
-        offset_dict[series] = np.array((z_off, y_off, x_off))
-        origin = np.array(itk_img.GetOrigin())
-        if origin[1] < 0 and origin[2] < 0:
-            origin[1] = -origin[1]
-            origin[2] = -origin[2]
-        origin_dict[series] = origin
-#        if count == 100:
-#            break
-#        count += 1
+    origin_dict = utils.npz_load(os.path.join(tables_path, "origin_table"))
+    offset_dict = utils.npz_load(os.path.join(tables_path, "offset_table"))
 
     file_list=glob(luna_normal_path+"*.mhd")
-
     df_node = pd.read_csv(annotations)
     df_node["file"] = df_node["seriesuid"].apply(get_filename)
     df_node = df_node.dropna()
@@ -282,9 +277,12 @@ def normalize_nodule_mask(**kwargs):
         mini_df = df_node[df_node["file"]==img_file] #get all nodules associate with file
         if len(mini_df) == 0:
             continue
-        mask = np.full(shape_max, -1024, dtype=np.int16)
+        mask = np.zeros(shape_max, dtype=np.int16)
         series = os.path.basename(img_file)[0:-4]
         origin = origin_dict[series]
+        if origin[1] > 0 and origin[2] > 0:
+            origin[1] = -origin[1]
+            origin[2] = -origin[2]
         offsets = offset_dict[series]
         itk_img = sitk.ReadImage(img_file)
         img_array = sitk.GetArrayFromImage(itk_img)
@@ -297,9 +295,10 @@ def normalize_nodule_mask(**kwargs):
             bounds = get_boundaries(origin, offsets, params)
             _, v_center, _ = bounds
             if np.min(v_center) < 0:
+                print("origin: {} offsets: {}\n params: {} v_center: {}".format(
+                    origin, offsets, params, v_center))
                 continue
-            # XXX check this
-            bounds = np.clip(bounds, 0, Z_MAX).astype(np.int16)
+            bounds = np.array(bounds.astype(np.int16)
             update_mask(mask, img_array, bounds)
             mask_count += 1
         assert mask_count != 0
@@ -307,9 +306,7 @@ def normalize_nodule_mask(**kwargs):
         itk_mask_img.SetSpacing(img_spacing)
         itk_mask_img.SetOrigin(origin)
         sitk.WriteImage(itk_mask_img, luna_mask_path+'/'+os.path.basename(img_file))
-#        if count == 10:
-#            break
-#        count += 1
+
 
 class LUNA16(data.Dataset):
     def __init__(self, root='.', images=None, targets=None, transform=None,
