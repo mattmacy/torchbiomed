@@ -16,11 +16,14 @@ class DiceLoss(Function):
 
     def forward(self, input, target):
         self.save_for_backward(input, target)
-        eps = 0.0000001
+        eps = 0.000001
         _, result_ = input.max(1)
         result_ = torch.squeeze(result_)
         result = torch.cuda.FloatTensor(result_.size())
         result.copy_(result_)
+        self.target_ = torch.cuda.FloatTensor(target.size())
+        self.target_.copy_(target)
+        target = self.target_
 #       print(input)
         intersect = torch.dot(result, target)
         # binary values so sum the same as sum of squares
@@ -38,8 +41,9 @@ class DiceLoss(Function):
         return out
 
     def backward(self, grad_output):
-        input, target = self.saved_tensors
+        input, _ = self.saved_tensors
         intersect, union = self.intersect, self.union
+        target = self.target_
         gt = torch.div(target, union)
         IoU2 = intersect/(union*union)
         pred = torch.mul(input[:, 1], IoU2)
