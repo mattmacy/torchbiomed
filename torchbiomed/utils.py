@@ -114,12 +114,6 @@ def truncate(image, min_bound, max_bound):
     image[image > max_bound] = max_bound
     return image
 
-def rescale(image, min_bound, max_bound):
-    image -= min_bound
-    image = image.astype(np.float32)
-    image /= float(max_bound - min_bound)
-    return image
-
 def resample_volume(img, spacing_old, spacing_new, bounds=None):
     (z_axis, y_axis, x_axis) = np.shape(img)
     resize_factor = np.array(spacing_old) / spacing_new 
@@ -133,7 +127,6 @@ def resample_volume(img, spacing_old, spacing_new, bounds=None):
     if bounds is not None:
         min_bound, max_bound = bounds
         img_tmp = truncate(img_tmp, min_bound, max_bound)
-        img_tmp = rescale(img_tmp, min_bound, max_bound)
         mu = np.mean(img_tmp)
         var = np.var(img_tmp)
     return (img_array_normalized, mu, var)
