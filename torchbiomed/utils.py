@@ -97,6 +97,7 @@ def copy_normalized(src, dtype=np.int16):
         return src
     
     (z_axis, y_axis, x_axis) = src_shape
+    print(src_shape)
     assert x_axis == y_axis
     new_img = np.full(shape_max, np.min(src), dtype=dtype)
     if z_axis < Z_MAX:
@@ -116,6 +117,7 @@ def truncate(image, min_bound, max_bound):
 
 def resample_volume(img, spacing_old, spacing_new, bounds=None):
     (z_axis, y_axis, x_axis) = np.shape(img)
+    print('img: {} old spacing: {} new spacing: {}'.format(np.shape(img), spacing_old, spacing_new))
     resize_factor = np.array(spacing_old) / spacing_new 
     new_shape = np.round(np.shape(img) * resize_factor)
     real_resize_factor = new_shape / np.shape(img)
@@ -131,9 +133,127 @@ def resample_volume(img, spacing_old, spacing_new, bounds=None):
         var = np.var(img_tmp)
     return (img_array_normalized, mu, var)
 
-def save_updated_image(img_arr, itk_img_orig, path, spacing):
+
+def save_updated_image(img_arr, path, origin, spacing):
     itk_scaled_img = sitk.GetImageFromArray(img_arr, isVector=False)
     itk_scaled_img.SetSpacing(spacing)
-    itk_scaled_img.SetOrigin(itk_img_orig.GetOrigin())
+    itk_scaled_img.SetOrigin(origin)
     sitk.WriteImage(itk_scaled_img, path)
 
+
+def save_image(img_arr, path):
+    itk_img = sitk.GetImageFromArray(img_arr, isVector=False)
+    sitk.WriteImage(itk_img, path)
+
+
+def get_subvolume(target, bounds):
+    (zs, ze), (ys, ye), (xs, xe) = bounds
+    return np.squeeze(target)[zs:ze, ys:ye, xs:xe]
+
+
+def partition_image(image, partition):
+    z_p, y_p, x_p = partition
+    z, y, x = np.shape(np.squeeze(image))
+    z_incr, y_incr, x_incr = z // z_p, y // y_p, x // x_p
+    assert z % z_p == 0
+    assert y % y_p == 0
+    assert x % x_p == 0
+    image_list = []
+    for zi in range(z_p):
+        zstart = zi*z_incr
+        zend = zstart + z_incr
+        for yi in range(y_p):
+            ystart = yi*y_incr
+            yend = ystart + y_incr
+            for xi in range(x_p):
+                xstart = xi*x_incr
+                xend = xstart + x_incr
+                subvolume = get_subvolume(image, ((zstart, zend), (ystart, yend), (xstart, xend)))
+                subvolume = subvolume.reshape((1, 1, z_incr, y_incr, x_incr))
+                image_list.append(subvolume)
+    return image_list
+
+
+def merge_image(image_list, partition):
+    z_p, y_p, x_p = partition
+    shape = np.array(np.shape(image_list[0]), dtype=np.int32)
+    z, y, x = 0, 0, 0
+    z, y, x = shape * partition
+    i = 0
+    z_list = []
+    for zi in range(z_p):
+        y_list = []
+        for yi in range(y_p):
+            x_list = []
+            for xi in range(x_p):
+                x_list.append(image_list[i])
+                i += 1
+            y_list.append(np.concatenate(x_list, axis=2))
+        z_list.append(np.concatenate(y_list, axis=1))
+    return np.concatenate(z_list)
+
+
+# Load the scans in given folder path
+def dicom_load_scan(path):
+    attr = {}
+    slices = [dicom.read_file(path + '/' + s) for s in os.listdir(path)]
+    slices.sort(key = lambda x: float(x.ImagePositionPatient[2]))
+
+    slices2 = []
+    prev = -1000000
+    # remove redundant slices
+    for slice in slices:
+        cur = slice.ImagePositionPatient[2]
+        if cur == prev:
+            continue
+        prev = cur
+        slices2.append(slice)
+    slices = slices2
+
+    for i in range(len(slices)-1):
+        try:
+            slice_thickness = np.abs(slices[i].ImagePositionPatient[2] - slices[i+1].ImagePositionPatient[2])
+        except:
+            slice_thickness = np.abs(slices[i].SliceLocation - slices[i+1].SliceLocation)
+        if slice_thickness != 0:
+            break
+
+    print('patient: {} slice: {}'.format(os.path.basename(path), slice_thickness))
+
+    assert slice_thickness != 0
+
+    for s in slices:
+        s.SliceThickness = slice_thickness
+
+    x, y = slices[0].PixelSpacing
+    attr['Spacing'] = (x, y, slice_thickness)
+    attr['Origin'] = slices[0].ImagePositionPatient
+
+    return (slices, attr)
+
+
+def dicom_get_pixels_hu(slices):
+    image = np.stack([s.pixel_array for s in slices])
+    image = image.astype(np.int16)
+
+    # Convert to Hounsfield units (HU)
+    for slice_number in range(len(slices)):
+
+        intercept = slices[slice_number].RescaleIntercept
+        slope = slices[slice_number].RescaleSlope
+
+        if slope != 1:
+            image[slice_number] = slope * image[slice_number].astype(np.float64)
+            image[slice_number] = image[slice_number].astype(np.int16)
+
+        image[slice_number] += np.int16(intercept)
+
+    return np.array(image, dtype=np.int16)
+
+
+def dicom_convert(src, dst):
+    for scandir in os.listdir(src):
+        slices, attr = dicom_load_scan(os.path.join(src, scandir))
+        image = dicom_get_pixels_hu(slices)
+        save_updated_image(image, os.path.join(dst, scandir + '.mhd'),
+                           attr['Origin'], attr['Spacing'])
