@@ -65,9 +65,13 @@ def load_label(root, series):
         return label_dict[series]
     img_file = os.path.join(root, series + ".mhd")
     itk_img = sitk.ReadImage(img_file)
-    img = sitk.GetArrayFromImage(itk_img).astype(np.uint8)
-    img[img != 0] = 1
-    label_dict[series] = img
+    img = sitk.GetArrayFromImage(itk_img)
+    if np.max(img) > 3400:
+        img[img <= 3480] = 0
+        img[img > 3480] = 1
+    else:
+        img[img != 0] = 1
+    label_dict[series] = img.astype(np.uint8)
     return img
 
 
@@ -93,7 +97,7 @@ def make_dataset(dir, images, targets, seed, train, class_balance, partition, no
     global image_dict, label_dict, test_split, train_split
     zero_tensor = None
 
-    assert mode != "infer"
+    train = mode == "train"
     label_path = os.path.join(dir, targets)
     label_files = glob(os.path.join(label_path, "*.mhd"))
     label_list = []
@@ -117,7 +121,7 @@ def make_dataset(dir, images, targets, seed, train, class_balance, partition, no
         np.random.seed(seed)
         full = set(image_list)
         positives = set(label_list) & full
-        train_split, test_split = train_test_split(full, positives)
+        train_split, test_split = train_test_split(full, positives, test_fraction)
     if train:
         keys = train_split
     else:
@@ -349,7 +353,7 @@ class LUNA16(data.Dataset):
         if mode == "infer":
             imgs = full_dataset(root, images)
         else:
-            imgs, target_mean = make_dataset(root, images, targets, seed, mode, class_balance, split, nonempty, test_fraction)
+            imgs, target_mean = make_dataset(root, images, targets, seed, mode, class_balance, split, nonempty, test_fraction, mode)
             self.data_mean = target_mean
         if len(imgs) == 0:
             raise(RuntimeError("Found 0 images: " + os.path.join(root, images) + "\n"))
